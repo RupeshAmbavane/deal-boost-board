@@ -1,18 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Upload, Users } from 'lucide-react';
+import { Upload, Users, Activity, TrendingUp, XCircle } from 'lucide-react';
 import { Customer } from '@/types/customer';
 import { getCustomers } from '@/services/customerService';
 import { CustomerTable } from './CustomerTable';
 import { CSVUpload } from './CSVUpload';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 export const SalesRepDashboard = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const { user, signOut } = useAuth();
   const { toast } = useToast();
 
@@ -35,6 +38,27 @@ export const SalesRepDashboard = () => {
 
   useEffect(() => {
     loadData();
+
+    // Set up real-time subscription for customers
+    const customersChannel = supabase
+      .channel('my-customers-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'customers'
+        },
+        () => {
+          console.log('Customer data changed, reloading...');
+          loadData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(customersChannel);
+    };
   }, []);
 
   const handleSignOut = async () => {
@@ -66,8 +90,14 @@ export const SalesRepDashboard = () => {
     loadData();
   };
 
-  const activeCustomers = customers.length; // All customers are active for now
-  const pendingCustomers = 0; // Can be enhanced based on workflow status
+  const activeCustomers = customers.filter(c => c.status === 'active').length;
+  const pendingCustomers = customers.filter(c => c.status === 'pending').length;
+  const wonCustomers = customers.filter(c => c.status === 'won').length;
+  const lostCustomers = customers.filter(c => c.status === 'lost').length;
+
+  const filteredCustomers = statusFilter === 'all' 
+    ? customers 
+    : customers.filter(c => c.status === statusFilter);
 
   return (
     <div className="min-h-screen bg-dashboard-bg p-6">
@@ -95,42 +125,68 @@ export const SalesRepDashboard = () => {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Customers</CardTitle>
+              <CardTitle className="text-sm font-medium">Total</CardTitle>
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{customers.length}</div>
               <p className="text-xs text-muted-foreground">
-                Your assigned customers
+                All customers
               </p>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => setStatusFilter('active')}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Customers</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Active</CardTitle>
+              <Activity className="h-4 w-4 text-green-600" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{activeCustomers}</div>
               <p className="text-xs text-muted-foreground">
-                Currently in workflow
+                In workflow
               </p>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => setStatusFilter('pending')}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Pending</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
+              <Activity className="h-4 w-4 text-yellow-600" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{pendingCustomers}</div>
               <p className="text-xs text-muted-foreground">
-                Awaiting processing
+                Awaiting process
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => setStatusFilter('won')}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Won</CardTitle>
+              <TrendingUp className="h-4 w-4 text-blue-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{wonCustomers}</div>
+              <p className="text-xs text-muted-foreground">
+                Converted
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => setStatusFilter('lost')}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Lost</CardTitle>
+              <XCircle className="h-4 w-4 text-red-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{lostCustomers}</div>
+              <p className="text-xs text-muted-foreground">
+                Not converted
               </p>
             </CardContent>
           </Card>
@@ -151,17 +207,30 @@ export const SalesRepDashboard = () => {
           </Card>
         )}
 
-        {/* Customers Table */}
+        {/* Customers Table with Filters */}
         <Card>
           <CardHeader>
-            <CardTitle>Your Customers</CardTitle>
-            <CardDescription>
-              Manage and process your assigned customers
-            </CardDescription>
+            <div className="flex justify-between items-center">
+              <div>
+                <CardTitle>Your Customers</CardTitle>
+                <CardDescription>
+                  Manage and process your assigned customers
+                </CardDescription>
+              </div>
+              <Tabs value={statusFilter} onValueChange={setStatusFilter}>
+                <TabsList>
+                  <TabsTrigger value="all">All</TabsTrigger>
+                  <TabsTrigger value="pending">Pending</TabsTrigger>
+                  <TabsTrigger value="active">Active</TabsTrigger>
+                  <TabsTrigger value="won">Won</TabsTrigger>
+                  <TabsTrigger value="lost">Lost</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
           </CardHeader>
           <CardContent>
             <CustomerTable 
-              data={customers} 
+              data={filteredCustomers} 
               loading={loading}
               onDataChange={loadData}
             />

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, Users, UserCheck } from 'lucide-react';
+import { Plus, Users, UserCheck, Activity, TrendingUp } from 'lucide-react';
 import { SalesRep } from '@/types/salesRep';
 import { Customer } from '@/types/customer';
 import { getSalesReps } from '@/services/salesRepService';
@@ -9,6 +9,7 @@ import { getCustomers } from '@/services/customerService';
 import { SalesRepTable } from './SalesRepTable';
 import { InviteSalesRepDialog } from './InviteSalesRepDialog';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 export const ClientAdminDashboard = () => {
   const [salesReps, setSalesReps] = useState<SalesRep[]>([]);
@@ -40,6 +41,44 @@ export const ClientAdminDashboard = () => {
 
   useEffect(() => {
     loadData();
+
+    // Set up real-time subscriptions for sales_reps and customers
+    const salesRepsChannel = supabase
+      .channel('sales-reps-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'sales_reps'
+        },
+        () => {
+          console.log('Sales reps data changed, reloading...');
+          loadData();
+        }
+      )
+      .subscribe();
+
+    const customersChannel = supabase
+      .channel('customers-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'customers'
+        },
+        () => {
+          console.log('Customers data changed, reloading...');
+          loadData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(salesRepsChannel);
+      supabase.removeChannel(customersChannel);
+    };
   }, []);
 
   const handleInviteSuccess = () => {
@@ -53,6 +92,9 @@ export const ClientAdminDashboard = () => {
 
   const activeSalesReps = salesReps.filter(rep => rep.status === 'active').length;
   const totalCustomers = customers.length;
+  const activeCustomers = customers.filter(c => c.status === 'active').length;
+  const pendingCustomers = customers.filter(c => c.status === 'pending').length;
+  const wonCustomers = customers.filter(c => c.status === 'won').length;
 
   return (
     <div className="min-h-screen bg-dashboard-bg p-6">
@@ -70,10 +112,10 @@ export const ClientAdminDashboard = () => {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Sales Reps</CardTitle>
+              <CardTitle className="text-sm font-medium">Sales Reps</CardTitle>
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -92,22 +134,46 @@ export const ClientAdminDashboard = () => {
             <CardContent>
               <div className="text-2xl font-bold">{totalCustomers}</div>
               <p className="text-xs text-muted-foreground">
-                Across all sales reps
+                All customers
               </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Avg. Customers/Rep</CardTitle>
-              <UserCheck className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Active</CardTitle>
+              <Activity className="h-4 w-4 text-green-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {activeSalesReps > 0 ? Math.round(totalCustomers / activeSalesReps) : 0}
-              </div>
+              <div className="text-2xl font-bold">{activeCustomers}</div>
               <p className="text-xs text-muted-foreground">
-                Per active sales rep
+                In workflow
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Pending</CardTitle>
+              <Activity className="h-4 w-4 text-yellow-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{pendingCustomers}</div>
+              <p className="text-xs text-muted-foreground">
+                Awaiting process
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Won</CardTitle>
+              <TrendingUp className="h-4 w-4 text-blue-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{wonCustomers}</div>
+              <p className="text-xs text-muted-foreground">
+                Converted
               </p>
             </CardContent>
           </Card>

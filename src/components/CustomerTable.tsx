@@ -11,6 +11,7 @@ import {
 } from '@tanstack/react-table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import { Customer } from '@/types/customer';
 import { processClient } from '@/services/salesApi';
 import { useToast } from '@/hooks/use-toast';
@@ -119,6 +120,28 @@ export const CustomerTable = ({ data, loading, onDataChange }: CustomerTableProp
       columnHelper.accessor('source', {
         header: 'Source',
         cell: info => info.getValue(),
+      }),
+      columnHelper.accessor('status', {
+        header: 'Status',
+        cell: info => {
+          const status = info.getValue() || 'pending';
+          const variant = 
+            status === 'active' ? 'default' :
+            status === 'won' ? 'default' :
+            status === 'lost' ? 'destructive' :
+            'secondary';
+          
+          return (
+            <Badge variant={variant} className={
+              status === 'active' ? 'bg-green-600' :
+              status === 'won' ? 'bg-blue-600' :
+              status === 'lost' ? 'bg-red-600' :
+              ''
+            }>
+              {status}
+            </Badge>
+          );
+        },
       }),
       columnHelper.accessor('notes', {
         header: 'Notes',
