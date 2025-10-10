@@ -12,6 +12,7 @@ export default function AcceptInvite() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
   const [formData, setFormData] = useState({
     fullName: '',
     password: '',
@@ -22,15 +23,55 @@ export default function AcceptInvite() {
   const type = searchParams.get('type');
 
   useEffect(() => {
-    if (!token || type !== 'invite') {
-      toast({
-        title: "Invalid invitation link",
-        description: "This invitation link is invalid or has expired.",
-        variant: "destructive",
-      });
-      navigate('/auth');
-    }
-  }, [token, type, navigate, toast]);
+    const initFromInvite = async () => {
+      try {
+        const url = new URL(window.location.href);
+        const code = url.searchParams.get('code');
+        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+        const access_token = hashParams.get('access_token');
+        const refresh_token = hashParams.get('refresh_token');
+
+        if (code) {
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) throw error;
+          setSessionReady(true);
+          return;
+        }
+
+        if (access_token && refresh_token) {
+          const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+          if (error) throw error;
+          setSessionReady(true);
+          return;
+        }
+
+        // If already signed in, mark ready
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          setSessionReady(true);
+          return;
+        }
+
+        toast({
+          title: "Invalid or expired invitation link",
+          description: "Please request a new invite from your administrator.",
+          variant: "destructive",
+        });
+        navigate('/auth');
+      } catch (err: any) {
+        toast({
+          title: "Invitation error",
+          description: err.message || "Failed to validate invitation link.",
+          variant: "destructive",
+        });
+        navigate('/auth');
+      }
+    };
+
+    initFromInvite();
+    // run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,7 +182,7 @@ export default function AcceptInvite() {
             <Button 
               type="submit" 
               className="w-full" 
-              disabled={loading || !formData.fullName || !formData.password || !formData.confirmPassword}
+              disabled={loading || !sessionReady || !formData.fullName || !formData.password || !formData.confirmPassword}
             >
               {loading ? "Setting up account..." : "Complete Setup"}
             </Button>
