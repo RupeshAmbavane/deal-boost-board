@@ -3,3 +3,6 @@ project_id = "zwhtgerardkbjvjmruvt"
 [functions]
 [functions.invite-sales-rep]
 verify_jwt = false
+
+[functions.webhook-customer-onboard]
+verify_jwt = false
