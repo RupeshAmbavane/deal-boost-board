@@ -10,6 +10,8 @@ import { SalesRepTable } from './SalesRepTable';
 import { InviteSalesRepDialog } from './InviteSalesRepDialog';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import AuditLogViewer from './AuditLogViewer';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export const ClientAdminDashboard = () => {
   const [salesReps, setSalesReps] = useState<SalesRep[]>([]);
@@ -179,20 +181,33 @@ export const ClientAdminDashboard = () => {
           </Card>
         </div>
 
-        {/* Sales Reps Table */}
+        {/* Sales Reps & Audit Logs */}
         <Card>
           <CardHeader>
-            <CardTitle>Sales Representatives</CardTitle>
+            <CardTitle>Management</CardTitle>
             <CardDescription>
-              Manage your sales team and monitor their performance
+              Manage your sales team and monitor system activities
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <SalesRepTable 
-              data={salesReps} 
-              loading={loading}
-              onDataChange={loadData}
-            />
+            <Tabs defaultValue="reps" className="w-full">
+              <TabsList>
+                <TabsTrigger value="reps">Sales Reps</TabsTrigger>
+                <TabsTrigger value="audit">Audit Log</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="reps" className="mt-6">
+                <SalesRepTable 
+                  data={salesReps} 
+                  loading={loading}
+                  onDataChange={loadData}
+                />
+              </TabsContent>
+              
+              <TabsContent value="audit" className="mt-6">
+                <AuditLogViewer />
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
 

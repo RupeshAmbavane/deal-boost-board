@@ -16,14 +16,16 @@ import { Customer } from '@/types/customer';
 import { processClient } from '@/services/salesApi';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Send } from 'lucide-react';
+import { Workflow } from '@/services/workflowService';
 
 interface CustomerTableProps {
   data: Customer[];
   loading?: boolean;
   onDataChange?: () => void;
+  workflows?: Workflow[];
 }
 
-export const CustomerTable = ({ data, loading, onDataChange }: CustomerTableProps) => {
+export const CustomerTable = ({ data, loading, onDataChange, workflows = [] }: CustomerTableProps) => {
   const { toast } = useToast();
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -49,6 +51,7 @@ export const CustomerTable = ({ data, loading, onDataChange }: CustomerTableProp
           title: 'Success',
           description: `Customer ${customer.first_name} ${customer.last_name} has been processed successfully.`,
         });
+        onDataChange?.();
       } else {
         toast({
           title: 'Processing Failed',
@@ -143,6 +146,38 @@ export const CustomerTable = ({ data, loading, onDataChange }: CustomerTableProp
           );
         },
       }),
+      columnHelper.display({
+        id: 'workflow',
+        header: 'Workflow',
+        cell: ({ row }) => {
+          const customerId = row.original.id;
+          const workflow = workflows.find(w => w.customer_id === customerId);
+          
+          if (!workflow) {
+            return <span className="text-muted-foreground text-sm">Not started</span>;
+          }
+          
+          const workflowColors: Record<string, string> = {
+            pending: 'bg-orange-500',
+            active: 'bg-cyan-500',
+            completed: 'bg-emerald-500',
+            failed: 'bg-rose-500',
+          };
+          
+          return (
+            <div className="space-y-1">
+              <Badge className={workflowColors[workflow.status] || 'bg-gray-500'}>
+                {workflow.status}
+              </Badge>
+              {workflow.current_step && (
+                <div className="text-xs text-muted-foreground truncate max-w-[150px]">
+                  {workflow.current_step}
+                </div>
+              )}
+            </div>
+          );
+        },
+      }),
       columnHelper.accessor('notes', {
         header: 'Notes',
         cell: info => info.getValue() || '-',
@@ -169,7 +204,7 @@ export const CustomerTable = ({ data, loading, onDataChange }: CustomerTableProp
               ) : (
                 <>
                   <Send className="h-4 w-4 mr-2" />
-                  Process Customer
+                  Process
                 </>
               )}
             </Button>
@@ -177,7 +212,7 @@ export const CustomerTable = ({ data, loading, onDataChange }: CustomerTableProp
         },
       }),
     ],
-    [columnHelper, processingCustomers, toast]
+    [columnHelper, processingCustomers, workflows, toast]
   );
 
   const table = useReactTable({

@@ -98,22 +98,54 @@ export default function AcceptInvite() {
     }
 
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        throw new Error('No authenticated user found');
+      }
+
+      // Get client_id from user metadata
+      const clientId = user.user_metadata?.client_id;
+      
       // Complete the invitation by updating the user's password
-      const { error } = await supabase.auth.updateUser({
+      const { error: updateError } = await supabase.auth.updateUser({
         password: formData.password,
         data: {
           display_name: formData.fullName,
-          role: 'sales_rep'
+          role: 'sales_rep',
+          client_id: clientId,
         }
       });
 
-      if (error) throw error;
+      if (updateError) throw updateError;
+
+      // Update sales_rep status to active
+      if (clientId) {
+        await supabase
+          .from('sales_reps')
+          .update({ status: 'active' })
+          .eq('user_id', user.id);
+
+        // Ensure user_roles entry exists
+        const { error: rolesError } = await supabase
+          .from('user_roles')
+          .upsert({
+            user_id: user.id,
+            role: 'sales_rep',
+            tenant_id: clientId,
+          }, {
+            onConflict: 'user_id,role,tenant_id',
+            ignoreDuplicates: true
+          });
+      }
 
       toast({
         title: "Account setup complete!",
         description: "Your account has been created successfully. You can now log in.",
       });
 
+      // Sign out and redirect to login
+      await supabase.auth.signOut();
       navigate('/auth');
     } catch (error: any) {
       toast({

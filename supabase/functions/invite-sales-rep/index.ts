@@ -207,6 +207,29 @@ serve(async (req) => {
       console.warn("profile upsert error", profileUpsertErr);
     }
 
+    // Ensure user_roles entry exists
+    const { error: rolesErr } = await supabaseAdmin.from("user_roles").upsert(
+      {
+        user_id: salesUser.id,
+        role: "sales_rep",
+        tenant_id: clientId,
+      },
+      { onConflict: "user_id,role,tenant_id" }
+    );
+    if (rolesErr) {
+      console.warn("user_roles upsert error", rolesErr);
+    }
+
+    // Log audit event
+    await supabaseAdmin.from("audit_logs").insert({
+      tenant_id: clientId,
+      user_id: user.id,
+      action: "invite_sales_rep",
+      resource_type: "sales_rep",
+      resource_id: salesUser.id,
+      new_data: { email, first_name, last_name, phone_no },
+    });
+
     // Upsert sales_reps record for this client + email
     const { data: existingRep, error: existingErr } = await supabaseAdmin
       .from("sales_reps")

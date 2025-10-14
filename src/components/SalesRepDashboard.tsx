@@ -10,9 +10,11 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { getAllWorkflows, Workflow } from '@/services/workflowService';
 
 export const SalesRepDashboard = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -22,13 +24,17 @@ export const SalesRepDashboard = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const customersData = await getCustomers();
+      const [customersData, workflowsData] = await Promise.all([
+        getCustomers(),
+        getAllWorkflows()
+      ]);
       setCustomers(customersData);
+      setWorkflows(workflowsData);
     } catch (error) {
-      console.error('Error loading customers:', error);
+      console.error('Error loading data:', error);
       toast({
         title: 'Error',
-        description: 'Failed to load customers',
+        description: 'Failed to load data',
         variant: 'destructive'
       });
     } finally {
@@ -233,6 +239,7 @@ export const SalesRepDashboard = () => {
               data={filteredCustomers} 
               loading={loading}
               onDataChange={loadData}
+              workflows={workflows}
             />
           </CardContent>
         </Card>
