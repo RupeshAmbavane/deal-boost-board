@@ -52,6 +52,46 @@ const splitFullName = (fullName: string): { firstName: string; lastName: string 
   return { firstName, lastName };
 };
 
+// Helper to map various status values to allowed database values
+const normalizeStatus = (status: string): string => {
+  if (!status) return 'pending';
+  
+  const normalized = status.toLowerCase().trim();
+  
+  // Map common variations to allowed values: pending, active, won, lost
+  const statusMap: Record<string, string> = {
+    'pending': 'pending',
+    'new': 'pending',
+    'new lead': 'pending',
+    'lead': 'pending',
+    'prospect': 'pending',
+    'open': 'pending',
+    'active': 'active',
+    'contacted': 'active',
+    'contact': 'active',
+    'in progress': 'active',
+    'working': 'active',
+    'engaged': 'active',
+    'qualified': 'active',
+    'negotiation': 'active',
+    'coder': 'active',
+    'won': 'won',
+    'closed won': 'won',
+    'success': 'won',
+    'complete': 'won',
+    'completed': 'won',
+    'closed': 'won',
+    'lost': 'lost',
+    'closed lost': 'lost',
+    'rejected': 'lost',
+    'failed': 'lost',
+    'declined': 'lost',
+    'cancelled': 'lost',
+  };
+  
+  return statusMap[normalized] || 'pending';
+};
+
 export const ImportCsv: React.FC<ImportCsvProps> = ({ onImported, mode = 'upsert' }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { toast } = useToast();
@@ -92,7 +132,7 @@ export const ImportCsv: React.FC<ImportCsvProps> = ({ onImported, mode = 'upsert
         const phone = normalizePhone(r.phone_no || r.phonenumber || r['phone number'] || r.phone || '');
         const source = r.source || 'csv';
         const notes = r.notes || '';
-        const status = (r.status || 'pending').toLowerCase();
+        const status = normalizeStatus(r.status || 'pending');
 
         // Validate
         if (!email || !email.includes('@')) {

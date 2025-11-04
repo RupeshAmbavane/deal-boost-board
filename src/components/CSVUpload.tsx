@@ -21,6 +21,53 @@ const normalizePhone = (phone: string): string => {
   return phone.replace(/[^\d+]/g, '').substring(0, 20);
 };
 
+// Helper to map various status values to allowed database values
+const normalizeStatus = (status: string): string => {
+  if (!status) return 'pending';
+  
+  const normalized = status.toLowerCase().trim();
+  
+  // Map common variations to allowed values: pending, active, won, lost
+  const statusMap: Record<string, string> = {
+    // Pending variations
+    'pending': 'pending',
+    'new': 'pending',
+    'new lead': 'pending',
+    'lead': 'pending',
+    'prospect': 'pending',
+    'open': 'pending',
+    
+    // Active variations
+    'active': 'active',
+    'contacted': 'active',
+    'contact': 'active',
+    'in progress': 'active',
+    'working': 'active',
+    'engaged': 'active',
+    'qualified': 'active',
+    'negotiation': 'active',
+    'coder': 'active', // From the CSV example
+    
+    // Won variations
+    'won': 'won',
+    'closed won': 'won',
+    'success': 'won',
+    'complete': 'won',
+    'completed': 'won',
+    'closed': 'won',
+    
+    // Lost variations
+    'lost': 'lost',
+    'closed lost': 'lost',
+    'rejected': 'lost',
+    'failed': 'lost',
+    'declined': 'lost',
+    'cancelled': 'lost',
+  };
+  
+  return statusMap[normalized] || 'pending';
+};
+
 export const CSVUpload = ({ onUploadSuccess }: CSVUploadProps) => {
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -169,7 +216,7 @@ export const CSVUpload = ({ onUploadSuccess }: CSVUploadProps) => {
         const phone = phoneIdx !== -1 ? normalizePhone(columns[phoneIdx]) : '';
         const source = sourceIdx !== -1 ? (columns[sourceIdx]?.trim() || 'CSV Import') : 'CSV Import';
         const notes = notesIdx !== -1 ? columns[notesIdx]?.trim() : '';
-        const status = statusIdx !== -1 ? (columns[statusIdx]?.trim()?.toLowerCase() || 'pending') : 'pending';
+        const status = statusIdx !== -1 ? normalizeStatus(columns[statusIdx]) : 'pending';
 
         // Validate required fields
         if (!email || !email.includes('@')) {
