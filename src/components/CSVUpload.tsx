@@ -107,41 +107,81 @@ export const CSVUpload = ({ onUploadSuccess }: CSVUploadProps) => {
       const sourceIdx = getColumnIndex(['source', 'lead_source', 'origin']);
       const notesIdx = getColumnIndex(['notes', 'note', 'remarks', 'comments', 'description']);
 
+      // Helper to normalize phone numbers (handle scientific notation from Excel)
+      const normalizePhone = (phone: string): string => {
+        if (!phone) return '';
+        // If it's a number in scientific notation (e.g., 1.23E+10), convert it
+        const num = parseFloat(phone);
+        if (!isNaN(num) && phone.includes('E')) {
+          return Math.round(num).toString();
+        }
+        // Remove non-numeric characters except + at start
+        return phone.replace(/[^\d+]/g, '').substring(0, 20);
+      };
+
       // Process data rows
       const dataRows = lines.slice(1).filter(line => line.trim());
       const clientsData = [];
+      const errors: string[] = [];
 
-      for (const line of dataRows) {
+      for (let i = 0; i < dataRows.length; i++) {
+        const line = dataRows[i];
         const columns = parseCSVLine(line).map(c => c.replace(/"/g, ''));
         
-        // Accept any row with at least some data
-        if (columns.some(col => col.length > 0)) {
-          clientsData.push({
-            user_id: user.id,
-            first_name: firstNameIdx !== -1 ? (columns[firstNameIdx] || '') : '',
-            last_name: lastNameIdx !== -1 ? (columns[lastNameIdx] || '') : '',
-            email: emailIdx !== -1 ? (columns[emailIdx] || '') : `unknown_${Date.now()}_${Math.random().toString(36).substr(2, 9)}@example.com`,
-            phone_no: phoneIdx !== -1 ? (columns[phoneIdx] || '') : '',
-            source: sourceIdx !== -1 ? (columns[sourceIdx] || '') : 'CSV Import',
-            notes: notesIdx !== -1 ? (columns[notesIdx] || '') : ''
-          });
+        // Skip completely empty rows
+        if (!columns.some(col => col.length > 0)) continue;
+
+        const firstName = firstNameIdx !== -1 ? columns[firstNameIdx]?.trim() : '';
+        const lastName = lastNameIdx !== -1 ? columns[lastNameIdx]?.trim() : '';
+        const email = emailIdx !== -1 ? columns[emailIdx]?.trim() : '';
+        const phone = phoneIdx !== -1 ? normalizePhone(columns[phoneIdx]) : '';
+        const source = sourceIdx !== -1 ? (columns[sourceIdx]?.trim() || 'CSV Import') : 'CSV Import';
+        const notes = notesIdx !== -1 ? columns[notesIdx]?.trim() : '';
+
+        // Validate required fields
+        if (!email || !email.includes('@')) {
+          errors.push(`Row ${i + 2}: Invalid or missing email`);
+          continue;
         }
+        if (!firstName && !lastName) {
+          errors.push(`Row ${i + 2}: Missing both first and last name`);
+          continue;
+        }
+
+        clientsData.push({
+          sales_rep_user_id: user.id,
+          first_name: firstName || 'Unknown',
+          last_name: lastName || 'Unknown',
+          email: email,
+          phone_no: phone,
+          source: source,
+          notes: notes
+        });
       }
 
       if (clientsData.length === 0) {
-        throw new Error('No data rows found in CSV file');
+        const errorMsg = errors.length > 0 
+          ? `No valid rows found. Errors:\n${errors.slice(0, 5).join('\n')}${errors.length > 5 ? `\n...and ${errors.length - 5} more` : ''}`
+          : 'No data rows found in CSV file';
+        throw new Error(errorMsg);
       }
 
       // Insert data into Supabase
-      const { error } = await supabase
+      const { error, data } = await supabase
         .from('customers')
-        .insert(clientsData);
+        .insert(clientsData)
+        .select();
 
       if (error) throw error;
 
+      // Show warning if some rows had errors
+      const warningMsg = errors.length > 0 
+        ? ` ${errors.length} row(s) skipped due to validation errors.` 
+        : '';
+
       toast({
         title: "Upload Successful",
-        description: `Imported ${clientsData.length} clients. Use the "Process Client" button to send to workflow.`,
+        description: `Imported ${clientsData.length} customer(s).${warningMsg}`,
       });
 
       onUploadSuccess();

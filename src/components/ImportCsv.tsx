@@ -1,9 +1,10 @@
 import React, { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { insertSalesClients, upsertSalesClients, getCurrentClientId } from '@/services/salesClients';
-import { ensureUserClient } from '@/services/tenant';
+import { insertCustomers, upsertCustomers } from '@/services/customerService';
 import { Loader2, Upload } from 'lucide-react';
+import { Customer } from '@/types/customer';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ImportCsvProps {
   onImported?: (count: number) => void;
@@ -11,9 +12,7 @@ interface ImportCsvProps {
 }
 
 // Very basic CSV parser for comma-separated values with a header row
-// Assumes no embedded commas or quotes in fields (keep CSV simple)
 function parseCsv(content: string) {
-  // Remove BOM if present
   const normalizedContent = content.replace(/^\uFEFF/, '');
   const lines = normalizedContent.split(/\r?\n/).filter(l => l.trim().length > 0);
   if (lines.length === 0) return [] as any[];
@@ -29,6 +28,16 @@ function parseCsv(content: string) {
   return rows;
 }
 
+// Helper to normalize phone numbers (handle scientific notation from Excel)
+const normalizePhone = (phone: string): string => {
+  if (!phone) return '';
+  const num = parseFloat(phone);
+  if (!isNaN(num) && phone.includes('E')) {
+    return Math.round(num).toString();
+  }
+  return phone.replace(/[^\d+]/g, '').substring(0, 20);
+};
+
 export const ImportCsv: React.FC<ImportCsvProps> = ({ onImported, mode = 'upsert' }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { toast } = useToast();
@@ -39,56 +48,77 @@ export const ImportCsv: React.FC<ImportCsvProps> = ({ onImported, mode = 'upsert
   const handleFile = async (file: File) => {
     try {
       setLoading(true);
-      // Ensure the current user is assigned to a client (tenant)
-      let clientId = await getCurrentClientId();
-      if (!clientId) {
-        // Auto-provision a client for this user if missing
-        const createdId = await ensureUserClient();
-        clientId = createdId;
-        toast({
-          title: 'Client space created',
-          description: 'A private client workspace was created for your account. Proceeding with import...',
-        });
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
       }
+
       const text = await file.text();
       const rows = parseCsv(text);
 
-      // Expecting headers: first_name,last_name,email,phone_no,source
-      const normalized = rows.map(r => ({
-        // id/user_id omitted; DB trigger fills user_id; id auto
-        firstName: r.first_name ?? r.firstname ?? '',
-        lastName: r.last_name ?? r.lastname ?? '',
-        email: r.email ?? '',
-        phoneNo: r.phone_no ?? r.phone ?? '',
-        source: r.source ?? 'csv',
-      }));
+      // Map CSV rows to Customer type
+      const customers: Customer[] = [];
+      const errors: string[] = [];
 
-      // Filter out invalid rows
-      const valid = normalized.filter(r => r.email);
-      if (valid.length === 0) {
+      rows.forEach((r, idx) => {
+        const firstName = r.first_name || r.firstname || '';
+        const lastName = r.last_name || r.lastname || '';
+        const email = r.email || '';
+        const phone = normalizePhone(r.phone_no || r.phone || '');
+        const source = r.source || 'csv';
+        const notes = r.notes || '';
+
+        // Validate
+        if (!email || !email.includes('@')) {
+          errors.push(`Row ${idx + 2}: Invalid or missing email`);
+          return;
+        }
+        if (!firstName && !lastName) {
+          errors.push(`Row ${idx + 2}: Missing both first and last name`);
+          return;
+        }
+
+        customers.push({
+          id: crypto.randomUUID(),
+          sales_rep_user_id: user.id,
+          first_name: firstName || 'Unknown',
+          last_name: lastName || 'Unknown',
+          email: email,
+          phone_no: phone,
+          source: source,
+          notes: notes || null,
+          status: 'pending',
+        });
+      });
+
+      if (customers.length === 0) {
+        const errorMsg = errors.length > 0 
+          ? `No valid rows found. Errors:\n${errors.slice(0, 5).join('\n')}`
+          : 'CSV did not contain any valid rows.';
         toast({
           title: 'No valid rows',
-          description: 'CSV did not contain any rows with an email field.',
+          description: errorMsg,
           variant: 'destructive',
         });
         return;
       }
 
-      const action = mode === 'insert' ? insertSalesClients : upsertSalesClients;
-      const { count } = await action(valid as any);
+      const action = mode === 'insert' ? insertCustomers : upsertCustomers;
+      await action(customers);
 
+      const warningMsg = errors.length > 0 ? ` (${errors.length} row(s) skipped)` : '';
       toast({
         title: 'Import complete',
-        description: `Imported ${count} records`,
+        description: `Imported ${customers.length} customer(s)${warningMsg}`,
       });
-      onImported?.(count);
+      onImported?.(customers.length);
     } catch (err) {
       console.error('CSV import error', err);
       let description = 'Unknown error';
       if (err instanceof Error) {
         description = err.message;
       } else if (err && typeof err === 'object') {
-        // Supabase/Postgrest error shape may include message/details/hint/code
         const anyErr = err as any;
         description = anyErr?.message || anyErr?.details || anyErr?.hint || JSON.stringify(anyErr);
       }

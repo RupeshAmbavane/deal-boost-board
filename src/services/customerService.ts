@@ -12,6 +12,7 @@ export const mapFromDb = (row: any): Customer => ({
   phone_no: row.phone_no,
   source: row.source,
   notes: row.notes,
+  status: row.status,
   created_at: row.created_at,
   updated_at: row.updated_at,
 });
@@ -27,6 +28,7 @@ const mapToDb = (customer: Customer) => ({
   phone_no: customer.phone_no,
   source: customer.source,
   notes: customer.notes,
+  status: customer.status,
 });
 
 export const getCustomers = async (): Promise<Customer[]> => {
