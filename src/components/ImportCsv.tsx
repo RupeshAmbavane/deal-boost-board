@@ -38,6 +38,20 @@ const normalizePhone = (phone: string): string => {
   return phone.replace(/[^\d+]/g, '').substring(0, 20);
 };
 
+// Helper to split full name into first and last name
+const splitFullName = (fullName: string): { firstName: string; lastName: string } => {
+  const trimmed = fullName.trim();
+  if (!trimmed) return { firstName: '', lastName: '' };
+  
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) {
+    return { firstName: parts[0], lastName: '' };
+  }
+  const firstName = parts[0];
+  const lastName = parts.slice(1).join(' ');
+  return { firstName, lastName };
+};
+
 export const ImportCsv: React.FC<ImportCsvProps> = ({ onImported, mode = 'upsert' }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { toast } = useToast();
@@ -62,12 +76,23 @@ export const ImportCsv: React.FC<ImportCsvProps> = ({ onImported, mode = 'upsert
       const errors: string[] = [];
 
       rows.forEach((r, idx) => {
-        const firstName = r.first_name || r.firstname || '';
-        const lastName = r.last_name || r.lastname || '';
+        // Try to get first and last name
+        let firstName = r.first_name || r.firstname || '';
+        let lastName = r.last_name || r.lastname || '';
+        
+        // Check if we have a full name field instead
+        const fullName = r['full name'] || r.fullname || r.name || '';
+        if (fullName && (!firstName || !lastName)) {
+          const { firstName: fn, lastName: ln } = splitFullName(fullName);
+          firstName = firstName || fn;
+          lastName = lastName || ln;
+        }
+
         const email = r.email || '';
-        const phone = normalizePhone(r.phone_no || r.phone || '');
+        const phone = normalizePhone(r.phone_no || r.phonenumber || r['phone number'] || r.phone || '');
         const source = r.source || 'csv';
         const notes = r.notes || '';
+        const status = (r.status || 'pending').toLowerCase();
 
         // Validate
         if (!email || !email.includes('@')) {
@@ -75,7 +100,7 @@ export const ImportCsv: React.FC<ImportCsvProps> = ({ onImported, mode = 'upsert
           return;
         }
         if (!firstName && !lastName) {
-          errors.push(`Row ${idx + 2}: Missing both first and last name`);
+          errors.push(`Row ${idx + 2}: Missing name (provide Full Name or First/Last Name)`);
           return;
         }
 
@@ -88,7 +113,7 @@ export const ImportCsv: React.FC<ImportCsvProps> = ({ onImported, mode = 'upsert
           phone_no: phone,
           source: source,
           notes: notes || null,
-          status: 'pending',
+          status: status,
         });
       });
 
@@ -157,7 +182,7 @@ export const ImportCsv: React.FC<ImportCsvProps> = ({ onImported, mode = 'upsert
         )}
       </Button>
       <div className="text-xs text-muted-foreground">
-        Expected headers: first_name, last_name, email, phone_no, source
+        Flexible format: Supports First/Last Name or Full Name columns
       </div>
     </div>
   );

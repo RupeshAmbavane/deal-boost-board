@@ -11,6 +11,16 @@ interface CSVUploadProps {
   onUploadSuccess: () => void;
 }
 
+// Helper to normalize phone numbers (handle scientific notation from Excel)
+const normalizePhone = (phone: string): string => {
+  if (!phone) return '';
+  const num = parseFloat(phone);
+  if (!isNaN(num) && phone.includes('E')) {
+    return Math.round(num).toString();
+  }
+  return phone.replace(/[^\d+]/g, '').substring(0, 20);
+};
+
 export const CSVUpload = ({ onUploadSuccess }: CSVUploadProps) => {
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -85,7 +95,7 @@ export const CSVUpload = ({ onUploadSuccess }: CSVUploadProps) => {
         return result;
       };
       
-      const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/"/g, ''));
+      const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/"/g, '').trim());
       
       // Find column indices - try multiple variations, return -1 if not found
       const getColumnIndex = (columnVariations: string[]) => {
@@ -100,23 +110,28 @@ export const CSVUpload = ({ onUploadSuccess }: CSVUploadProps) => {
         return -1;
       };
 
+      const fullNameIdx = getColumnIndex(['fullname', 'full_name', 'full name', 'name']);
       const firstNameIdx = getColumnIndex(['firstname', 'first_name', 'fname', 'first name']);
       const lastNameIdx = getColumnIndex(['lastname', 'last_name', 'lname', 'last name']);
-      const emailIdx = getColumnIndex(['email', 'email_address', 'mail']);
-      const phoneIdx = getColumnIndex(['phoneno', 'phone_no', 'phone', 'mobile', 'contact']);
-      const sourceIdx = getColumnIndex(['source', 'lead_source', 'origin']);
+      const emailIdx = getColumnIndex(['email', 'email_address', 'mail', 'e-mail']);
+      const phoneIdx = getColumnIndex(['phoneno', 'phone_no', 'phone', 'mobile', 'contact', 'phonenumber', 'phone number']);
+      const sourceIdx = getColumnIndex(['source', 'lead_source', 'origin', 'lead source']);
       const notesIdx = getColumnIndex(['notes', 'note', 'remarks', 'comments', 'description']);
+      const statusIdx = getColumnIndex(['status', 'lead_status', 'customer_status']);
 
-      // Helper to normalize phone numbers (handle scientific notation from Excel)
-      const normalizePhone = (phone: string): string => {
-        if (!phone) return '';
-        // If it's a number in scientific notation (e.g., 1.23E+10), convert it
-        const num = parseFloat(phone);
-        if (!isNaN(num) && phone.includes('E')) {
-          return Math.round(num).toString();
+      // Helper to split full name into first and last name
+      const splitFullName = (fullName: string): { firstName: string; lastName: string } => {
+        const trimmed = fullName.trim();
+        if (!trimmed) return { firstName: '', lastName: '' };
+        
+        const parts = trimmed.split(/\s+/);
+        if (parts.length === 1) {
+          return { firstName: parts[0], lastName: '' };
         }
-        // Remove non-numeric characters except + at start
-        return phone.replace(/[^\d+]/g, '').substring(0, 20);
+        // First part is first name, rest is last name
+        const firstName = parts[0];
+        const lastName = parts.slice(1).join(' ');
+        return { firstName, lastName };
       };
 
       // Process data rows
@@ -126,17 +141,35 @@ export const CSVUpload = ({ onUploadSuccess }: CSVUploadProps) => {
 
       for (let i = 0; i < dataRows.length; i++) {
         const line = dataRows[i];
-        const columns = parseCSVLine(line).map(c => c.replace(/"/g, ''));
+        const columns = parseCSVLine(line).map(c => c.replace(/"/g, '').trim());
         
         // Skip completely empty rows
         if (!columns.some(col => col.length > 0)) continue;
 
-        const firstName = firstNameIdx !== -1 ? columns[firstNameIdx]?.trim() : '';
-        const lastName = lastNameIdx !== -1 ? columns[lastNameIdx]?.trim() : '';
+        // Try to get first and last name
+        let firstName = '';
+        let lastName = '';
+        
+        // Check if we have a full name field first
+        if (fullNameIdx !== -1 && columns[fullNameIdx]) {
+          const { firstName: fn, lastName: ln } = splitFullName(columns[fullNameIdx]);
+          firstName = fn;
+          lastName = ln;
+        }
+        
+        // Override with explicit first/last name if available
+        if (firstNameIdx !== -1 && columns[firstNameIdx]) {
+          firstName = columns[firstNameIdx].trim();
+        }
+        if (lastNameIdx !== -1 && columns[lastNameIdx]) {
+          lastName = columns[lastNameIdx].trim();
+        }
+
         const email = emailIdx !== -1 ? columns[emailIdx]?.trim() : '';
         const phone = phoneIdx !== -1 ? normalizePhone(columns[phoneIdx]) : '';
         const source = sourceIdx !== -1 ? (columns[sourceIdx]?.trim() || 'CSV Import') : 'CSV Import';
         const notes = notesIdx !== -1 ? columns[notesIdx]?.trim() : '';
+        const status = statusIdx !== -1 ? (columns[statusIdx]?.trim()?.toLowerCase() || 'pending') : 'pending';
 
         // Validate required fields
         if (!email || !email.includes('@')) {
@@ -144,7 +177,7 @@ export const CSVUpload = ({ onUploadSuccess }: CSVUploadProps) => {
           continue;
         }
         if (!firstName && !lastName) {
-          errors.push(`Row ${i + 2}: Missing both first and last name`);
+          errors.push(`Row ${i + 2}: Missing name (provide Full Name or First/Last Name)`);
           continue;
         }
 
@@ -155,7 +188,8 @@ export const CSVUpload = ({ onUploadSuccess }: CSVUploadProps) => {
           email: email,
           phone_no: phone,
           source: source,
-          notes: notes
+          notes: notes,
+          status: status
         });
       }
 
@@ -278,7 +312,7 @@ export const CSVUpload = ({ onUploadSuccess }: CSVUploadProps) => {
             <div>
               <p className="font-medium">Flexible CSV Format:</p>
               <p className="text-muted-foreground">
-                Upload any CSV file. We'll automatically detect columns like FirstName, LastName, Email, Phone, Source
+                Supports various column names: Full Name (or First/Last Name), Email, Phone, Source, Status, Notes
               </p>
             </div>
           </div>
